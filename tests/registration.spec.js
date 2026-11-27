@@ -1,116 +1,49 @@
 import { test, expect } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
+import { RegistrationPage } from '../pages/registrationPage.js';
 
-const selectors = {
-    name: '#signupName',
-    lastName: '#signupLastName',
-    email: '#signupEmail',
-    password: '#signupPassword',
-    repeatPassword: '#signupRepeatPassword'
+const errors = {
+    nameRequired: 'Name is required',
+    nameInvalid: 'Name is invalid',
+    nameLength: 'Name has to be from 2 to 20 characters long',
+
+    lastNameRequired: 'Last name is required',
+    lastNameInvalid: 'Last name is invalid',
+    lastNameLength: 'Last name has to be from 2 to 20 characters long',
+
+    emailRequired: 'Email required',
+    emailInvalid: 'Email is incorrect',
+
+    passwordRequired: 'Password required',
+    passwordInvalid:
+        'Password has to be from 8 to 15 characters long and contain at least one integer, one capital, and one small letter',
+
+    repeatPasswordRequired: 'Re-enter password required',
+    passwordMismatch: 'Passwords do not match'
 };
 
-const passwordError =
-    'Password has to be from 8 to 15 characters long and contain at least one integer, one capital, and one small letter';
-
-function generateEmail() {
-    return `aqa-${randomUUID()}@test.com`;
-}
-
-function getValidData(overrides = {}) {
-    return {
-        name: 'Anna',
-        lastName: 'Smith',
-        email: generateEmail(),
-        password: 'Test1234',
-        repeatPassword: 'Test1234',
-        ...overrides
-    };
-}
-
-async function fillValidForm(page, overrides = {}) {
-    const data = getValidData(overrides);
-
-    await page.locator(selectors.name).fill(data.name);
-    await page.locator(selectors.lastName).fill(data.lastName);
-    await page.locator(selectors.email).fill(data.email);
-    await page.locator(selectors.password).fill(data.password);
-    await page.locator(selectors.repeatPassword)
-        .fill(data.repeatPassword);
-
-    return data;
-}
-
-async function verifyValidation(page, selector, value, error) {
-    await fillValidForm(page);
-
-    const field = page.locator(selector);
-
-    await field.fill(value);
-    await field.blur();
-
-    await expect(field).toHaveClass(/is-invalid/);
-
-    await expect(field).toHaveCSS(
-        'border-color',
-        'rgb(220, 53, 69)'
-    );
-
-    await expect(
-        page.getByRole('button', {
-            name: 'Register',
-            exact: true
-        })
-    ).toBeDisabled();
-
-    await expect(
-        page.getByText(error, { exact: true })
-    ).toBeVisible();
-}
-
 test.describe('Registration tests', () => {
+    let registrationPage;
 
     test.beforeEach(async ({ page }) => {
-        await page.goto('/');
-
-        await page.getByRole('button', {
-            name: 'Sign up',
-            exact: true
-        }).click();
-
-        await expect(
-            page.getByRole('heading', {
-                name: 'Registration',
-                exact: true
-            })
-        ).toBeVisible();
+        registrationPage = new RegistrationPage(page);
+        await registrationPage.open();
     });
 
-    // Positive registration scenario
+    // Positive scenario
 
-    test('Should successfully register a new user', async ({ page }) => {
-        await fillValidForm(page);
-
-        const registerButton = page.getByRole('button', {
-            name: 'Register',
-            exact: true
+    test('Should successfully register a new user', async () => {
+        await registrationPage.fillForm({
+            name: 'An',
+            lastName: 'A'.repeat(20)
         });
 
-        await expect(registerButton).toBeEnabled();
+        await registrationPage.verifyRegisterEnabled();
 
-        await registerButton.click();
+        const response = await registrationPage.register();
 
-        await expect(page).toHaveURL(/\/panel\/garage/);
-    });
+        expect(response.ok()).toBeTruthy();
 
-    // Register button validation
-
-    test('Should disable Register button when all fields are empty', async ({ page }) => {
-        await expect(
-            page.getByRole('button', {
-                name: 'Register',
-                exact: true
-            })
-        ).toBeDisabled();
+        await registrationPage.verifySuccessfulRegistration();
     });
 
     // Name validation
@@ -119,49 +52,48 @@ test.describe('Registration tests', () => {
         {
             title: 'Name is empty',
             value: '',
-            error: 'Name is required'
+            error: errors.nameRequired,
+            knownBug: true
         },
         {
             title: 'Name contains only one character',
             value: 'A',
-            error: 'Name has to be from 2 to 20 characters long'
+            error: errors.nameLength
         },
         {
             title: 'Name contains more than 20 characters',
             value: 'A'.repeat(21),
-            error: 'Name has to be from 2 to 20 characters long'
+            error: errors.nameLength
         },
         {
             title: 'Name contains numbers',
             value: 'Anna123',
-            error: 'Name is invalid'
+            error: errors.nameInvalid
         },
         {
             title: 'Name contains Cyrillic characters',
             value: 'Анна',
-            error: 'Name is invalid'
+            error: errors.nameInvalid
         },
         {
             title: 'Name contains special characters',
             value: 'Anna@',
-            error: 'Name is invalid'
+            error: errors.nameInvalid
         }
     ];
 
     for (const scenario of nameCases) {
-        test(`Should reject registration when ${scenario.title}`, async ({ page }) => {
+        test(`Should reject registration when ${scenario.title}`, async () => {
 
             // Known bug:
-            // Expected: "Name is required".
-            // Actual: "Name required".
-            test.fail(
-                scenario.value === '',
-                'Incorrect required Name validation message'
-            );
+            // Expected: Name is required.
+            // Actual: Name required.
+            if (scenario.knownBug) {
+                test.fail(true, 'Incorrect Name required error message');
+            }
 
-            await verifyValidation(
-                page,
-                selectors.name,
+            await registrationPage.verifyValidation(
+                registrationPage.nameInput,
                 scenario.value,
                 scenario.error
             );
@@ -174,49 +106,48 @@ test.describe('Registration tests', () => {
         {
             title: 'Last name is empty',
             value: '',
-            error: 'Last name is required'
+            error: errors.lastNameRequired,
+            knownBug: true
         },
         {
             title: 'Last name contains only one character',
             value: 'S',
-            error: 'Last name has to be from 2 to 20 characters long'
+            error: errors.lastNameLength
         },
         {
             title: 'Last name contains more than 20 characters',
             value: 'S'.repeat(21),
-            error: 'Last name has to be from 2 to 20 characters long'
+            error: errors.lastNameLength
         },
         {
             title: 'Last name contains numbers',
             value: 'Smith123',
-            error: 'Last name is invalid'
+            error: errors.lastNameInvalid
         },
         {
             title: 'Last name contains Cyrillic characters',
             value: 'Иванова',
-            error: 'Last name is invalid'
+            error: errors.lastNameInvalid
         },
         {
             title: 'Last name contains special characters',
             value: 'Smith@',
-            error: 'Last name is invalid'
+            error: errors.lastNameInvalid
         }
     ];
 
     for (const scenario of lastNameCases) {
-        test(`Should reject registration when ${scenario.title}`, async ({ page }) => {
+        test(`Should reject registration when ${scenario.title}`, async () => {
 
-            // Known issue:
-            // Required Last name validation message
-            // does not match the documented requirements.
-            test.fail(
-                scenario.value === '',
-                'Incorrect required Last name validation message'
-            );
+            // Known bug:
+            // Expected: Last name is required.
+            // Actual: Required error message differs from requirements.
+            if (scenario.knownBug) {
+                test.fail(true, 'Incorrect Last name required error message');
+            }
 
-            await verifyValidation(
-                page,
-                selectors.lastName,
+            await registrationPage.verifyValidation(
+                registrationPage.lastNameInput,
                 scenario.value,
                 scenario.error
             );
@@ -229,35 +160,34 @@ test.describe('Registration tests', () => {
         {
             title: 'Email is empty',
             value: '',
-            error: 'Email required'
+            error: errors.emailRequired
         },
         {
             title: 'Email does not contain @',
             value: 'aqa-test.com',
-            error: 'Email is incorrect'
-        },
-        {
-            title: 'Email does not contain a domain',
-            value: 'aqa-test@',
-            error: 'Email is incorrect'
+            error: errors.emailInvalid
         },
         {
             title: 'Email does not contain a local part',
             value: '@test.com',
-            error: 'Email is incorrect'
+            error: errors.emailInvalid
+        },
+        {
+            title: 'Email does not contain a domain',
+            value: 'aqa-test@',
+            error: errors.emailInvalid
         },
         {
             title: 'Email contains spaces',
             value: 'aqa test@test.com',
-            error: 'Email is incorrect'
+            error: errors.emailInvalid
         }
     ];
 
     for (const scenario of emailCases) {
-        test(`Should reject registration when ${scenario.title}`, async ({ page }) => {
-            await verifyValidation(
-                page,
-                selectors.email,
+        test(`Should reject registration when ${scenario.title}`, async () => {
+            await registrationPage.verifyValidation(
+                registrationPage.emailInput,
                 scenario.value,
                 scenario.error
             );
@@ -270,140 +200,104 @@ test.describe('Registration tests', () => {
         {
             title: 'Password is empty',
             value: '',
-            error: 'Password required'
+            error: errors.passwordRequired
         },
         {
             title: 'Password contains fewer than 8 characters',
             value: 'Test123',
-            error: passwordError
+            error: errors.passwordInvalid
         },
         {
             title: 'Password contains more than 15 characters',
             value: 'Test123456789012',
-            error: passwordError
+            error: errors.passwordInvalid
         },
         {
-            title: 'Password does not contain an uppercase letter',
+            title: 'Password does not contain uppercase letters',
             value: 'test1234',
-            error: passwordError
+            error: errors.passwordInvalid
         },
         {
-            title: 'Password does not contain a lowercase letter',
+            title: 'Password does not contain lowercase letters',
             value: 'TEST1234',
-            error: passwordError
+            error: errors.passwordInvalid
         },
         {
-            title: 'Password does not contain a number',
+            title: 'Password does not contain numbers',
             value: 'TestTest',
-            error: passwordError
+            error: errors.passwordInvalid
         }
     ];
 
     for (const scenario of passwordCases) {
-        test(`Should reject registration when ${scenario.title}`, async ({ page }) => {
-            await verifyValidation(
-                page,
-                selectors.password,
+        test(`Should reject registration when ${scenario.title}`, async () => {
+            await registrationPage.verifyValidation(
+                registrationPage.passwordInput,
                 scenario.value,
                 scenario.error
             );
         });
     }
 
-    // Re-enter password validation
+    // Repeat password validation
 
-    test('Should reject registration when Re-enter password is empty', async ({ page }) => {
-        await verifyValidation(
-            page,
-            selectors.repeatPassword,
+    test('Should reject registration when repeat password is empty', async () => {
+        await registrationPage.verifyValidation(
+            registrationPage.repeatPasswordInput,
             '',
-            'Re-enter password required'
+            errors.repeatPasswordRequired
         );
     });
 
-    test('Should reject registration when passwords do not match', async ({ page }) => {
-        await verifyValidation(
-            page,
-            selectors.repeatPassword,
+    test('Should reject registration when passwords do not match', async () => {
+        await registrationPage.verifyValidation(
+            registrationPage.repeatPasswordInput,
             'Test5678',
-            'Passwords do not match'
+            errors.passwordMismatch
         );
     });
 
-    // Trim validation
+    // Register button validation
 
-    test('Should accept name and last name with surrounding spaces', async ({ page }) => {
+    test('Should disable Register button when all fields are empty', async () => {
+        await registrationPage.verifyRegisterDisabled();
+    });
+
+    // Additional boundary and trim validation
+
+    test('Should accept name and last name with surrounding spaces', async () => {
 
         // Known bug:
-        // Expected: leading and trailing spaces are ignored.
-        // Actual: Name and Last name are marked as invalid
-        // and the Register button remains disabled.
-        test.fail(true, 'Name and Last name trim validation bug');
+        // Expected: Surrounding spaces are ignored.
+        // Actual: Name and Last name are invalid,
+        // and the Register button is disabled.
+        test.fail(true, 'Name and Last name are not trimmed');
 
-        await fillValidForm(page, {
+        await registrationPage.fillForm({
             name: ' Anna ',
             lastName: ' Smith '
         });
 
-        await expect(
-            page.getByRole('button', {
-                name: 'Register',
-                exact: true
-            })
-        ).toBeEnabled();
+        await registrationPage.verifyRegisterEnabled();
     });
 
-    // Name and Last name boundary values
-
-    test('Should accept name and last name at valid length boundaries', async ({ page }) => {
-        await fillValidForm(page, {
-            name: 'An',
+    test('Should accept name and last name at valid length boundaries', async () => {
+        await registrationPage.fillForm({
+            name: 'A'.repeat(20),
             lastName: 'Sm'
         });
 
-        const registerButton = page.getByRole('button', {
-            name: 'Register',
-            exact: true
-        });
-
-        await expect(registerButton).toBeEnabled();
-
-        await page.locator(selectors.name)
-            .fill('A'.repeat(20));
-
-        await page.locator(selectors.lastName)
-            .fill('S'.repeat(20));
-
-        await page.locator(selectors.lastName).blur();
-
-        await expect(registerButton).toBeEnabled();
+        await registrationPage.verifyRegisterEnabled();
     });
 
-    // Password boundary values
+    test('Should accept password with exactly 15 characters', async () => {
+        const password = 'Test12345678901';
 
-    test('Should accept password at valid length boundaries', async ({ page }) => {
-        await fillValidForm(page, {
-            password: 'Test1234',
-            repeatPassword: 'Test1234'
+        await registrationPage.fillForm({
+            password,
+            repeatPassword: password
         });
 
-        const registerButton = page.getByRole('button', {
-            name: 'Register',
-            exact: true
-        });
-
-        await expect(registerButton).toBeEnabled();
-
-        const maxLengthPassword = 'Test12345678901';
-
-        await page.locator(selectors.password)
-            .fill(maxLengthPassword);
-
-        await page.locator(selectors.repeatPassword)
-            .fill(maxLengthPassword);
-
-        await page.locator(selectors.repeatPassword).blur();
-
-        await expect(registerButton).toBeEnabled();
+        await registrationPage.verifyRegisterEnabled();
     });
 });
